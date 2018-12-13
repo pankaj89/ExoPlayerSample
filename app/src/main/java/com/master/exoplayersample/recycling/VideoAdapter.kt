@@ -7,85 +7,101 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
-import com.google.android.exoplayer2.ui.PlayerView
-import com.master.exoplayersample.ExoPlayerHelper
+import android.widget.TextView
+import com.bumptech.glide.Glide
+import com.google.android.exoplayer2.ExoPlaybackException
 import com.master.exoplayersample.R
 
-class VideoAdapter(val context: Context, val list: ArrayList<VideoModel>) : RecyclerView.Adapter<VideoAdapter.MyViewHolder>() {
+
+class VideoAdapter(val context: Context, val list: ArrayList<VideoModel>) : ExoPlayerRecyclerViewAdapter() {
 
     val layoutInflater: LayoutInflater = LayoutInflater.from(context)
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
 
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): MyViewHolder {
-        val view = layoutInflater.inflate(R.layout.single_card, parent, false)
-        return MyViewHolder(context, view)
+        if (viewType == TYPE_VIDEO) {
+            val view = layoutInflater.inflate(R.layout.single_card, parent, false)
+            val customViewHolder = MyCustomViewHolder(view)
+            customViewHolder.makeLifeCycleAware(context as AppCompatActivity)
+            return customViewHolder
+        } else {
+            val view = layoutInflater.inflate(R.layout.single_card_image, parent, false)
+            return ImageViewHolder(view)
+        }
+    }
+
+    val TYPE_IMAGE = 1
+    val TYPE_VIDEO = 2
+    override fun getItemViewType(position: Int): Int {
+        return if (list.get(position).name?.startsWith("Video") == true) {
+            TYPE_VIDEO
+        } else {
+            TYPE_IMAGE
+        }
     }
 
     override fun getItemCount(): Int {
         return list.size
     }
 
-    override fun onBindViewHolder(viewHolder: MyViewHolder, position: Int) {
-        viewHolder.bind(list.get(position))
+    override fun onBindViewHolder(viewHolder: RecyclerView.ViewHolder, position: Int) {
+        if (viewHolder is MyCustomViewHolder) {
+            viewHolder.playerView?.visibility = View.INVISIBLE
+            viewHolder.bind(list.get(position))
+        } else if (viewHolder is ImageViewHolder) {
+            viewHolder.bind(list.get(position))
+        }
     }
 
 
-    class MyViewHolder(val context: Context, val view: View) : RecyclerView.ViewHolder(view) {
+    class MyCustomViewHolder(inflatedView: View) : ExoPlayerViewHolder(
+            view = inflatedView,
+            playerView = inflatedView.findViewById(R.id.playerView),
+            playbackView = inflatedView.findViewById(R.id.img_playback),
+            imgPreview = inflatedView.findViewById<ImageView>(R.id.img_preview),
+            muteUnmuteView = inflatedView.findViewById<ImageView>(R.id.img_vol),
+            enableCache = true,
+            loopVideo = true,
+            muteDefault = true
+    ) {
 
-        var exoPlayerHelper: ExoPlayerHelper? = null
-        val playerView = view.findViewById<PlayerView>(R.id.playerView)
-        val img_playback = view.findViewById<ImageView>(R.id.img_playback)
-        val img_vol = view.findViewById<ImageView>(R.id.img_vol)
-
-        companion object {
-            var singleInstanceExoPlayer: ExoPlayerHelper? = null
-        }
-
-        init {
-            exoPlayerHelper = ExoPlayerHelper(mContext = context as AppCompatActivity, playerView = playerView, enableCache = true, loopVideo = true)
-            exoPlayerHelper?.setListener(listener = object : ExoPlayerHelper.Listener {
-                override fun onStart() {
-                    super.onStart()
-                    img_playback.isSelected = true
-                }
-
-                override fun onStop() {
-                    super.onStop()
-                    img_playback.isSelected = false
-                }
-            })
-            exoPlayerHelper?.mute()
-        }
+        val txtStatus = view.findViewById<TextView>(R.id.txtStatus)
 
         fun bind(videoModel: VideoModel) {
-            exoPlayerHelper?.setUrl(videoModel.video_url ?: "", false)
-            img_playback?.setOnClickListener {
-                if (singleInstanceExoPlayer?.equals(exoPlayerHelper) == true) {
-                    if (singleInstanceExoPlayer?.isPlaying() == true) {
-                        singleInstanceExoPlayer?.pause()
-                    } else {
-                        singleInstanceExoPlayer?.play()
-                    }
-                } else {
-                    singleInstanceExoPlayer?.pause()
-                    singleInstanceExoPlayer = exoPlayerHelper
-                    singleInstanceExoPlayer?.play()
-                }
-//                img_playback.isSelected = !img_playback.isSelected
-            }
-            img_vol?.setOnClickListener {
-                exoPlayerHelper?.toggleMuteUnMute()
-                img_vol.isSelected = !img_vol.isSelected
+            if (videoModel.video_url?.isNotBlank() == true) {
+                setUrl(videoModel.video_url!!, videoModel.image_url)
             }
         }
 
-        fun release() {
-            exoPlayerHelper?.pause()
-            singleInstanceExoPlayer?.pause()
+        override fun onStart() {
+            super.onStart()
+            txtStatus.text = "Playing"
         }
+
+        override fun onBuffering(isBuffering: Boolean) {
+            super.onBuffering(isBuffering)
+            if (isBuffering) {
+                txtStatus.text = "Buffering"
+            }
+        }
+
+        override fun onStop() {
+            super.onStop()
+            txtStatus.text = "Stopped"
+        }
+
+        override fun onError(error: ExoPlaybackException?) {
+            super.onError(error)
+            txtStatus.text = "Error"
+        }
+
     }
 
-    override fun onViewDetachedFromWindow(holder: MyViewHolder) {
-        super.onViewDetachedFromWindow(holder)
-        holder.release()
+    class ImageViewHolder(var inflatedView: View) : RecyclerView.ViewHolder(inflatedView) {
+        fun bind(get: VideoModel) {
+            val requestManager = Glide.with(inflatedView.context).load(get.video_url)
+            val image = inflatedView.findViewById<ImageView>(R.id.img_preview)
+            requestManager.into(image)
+            image.visibility = View.VISIBLE
+        }
     }
 }

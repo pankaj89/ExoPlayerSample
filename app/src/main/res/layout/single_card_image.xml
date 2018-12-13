@@ -66,55 +66,14 @@
             android:layout_width="match_parent"
             android:layout_height="200dp">
 
-            <com.google.android.exoplayer2.ui.PlayerView
-                android:id="@+id/playerView"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:layout_centerInParent="true"
-                app:resize_mode="fill"
-                app:shutter_background_color="#FF00FF"
-                app:surface_type="texture_view"
-                app:use_controller="false" />
-
             <ImageView
                 android:id="@+id/img_preview"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:layout_centerInParent="true"
+                android:src="@mipmap/ic_launcher_round"
                 android:scaleType="centerCrop" />
 
-            <ImageView
-                android:id="@+id/img_playback"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_centerInParent="true"
-                android:layout_gravity="center"
-                android:background="#80000000"
-                android:padding="8dp"
-                android:src="@drawable/selector_play_pause"
-                android:visibility="visible" />
-
-            <ImageView
-                android:id="@+id/img_vol"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="right|bottom"
-                android:layout_margin="8dp"
-                android:background="#80000000"
-                android:padding="8dp"
-                android:src="@drawable/selector_mute_unmute" />
-
-            <TextView
-                android:id="@+id/txtStatus"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_below="@+id/img_vol"
-                android:layout_gravity="right|bottom"
-                android:layout_margin="8dp"
-                android:background="#80000000"
-                android:padding="8dp"
-                android:text="buffering"
-                android:textColor="#FFFFFF" />
 
         </RelativeLayout>
 

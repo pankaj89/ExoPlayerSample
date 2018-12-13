@@ -17,8 +17,6 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        AndroidUtilities.init(this)
-
 //        val file="https://download.blender.org/peach/bigbuckbunny_movies/BigBuckBunny_320x180.mp4"
         val file = "/storage/emulated/0/WhatsApp/Media/WhatsApp Video/VID-20181209-WA0001.mp4"
 
@@ -78,31 +76,28 @@ class MainActivity : AppCompatActivity() {
         //------Trimmer
         range_slider.setVideoPath(file)
 
-        range_slider.setMaxProgressDiffInSec(200f)
-        range_slider.setMinProgressDiffInSec(2f)
+        range_slider.setMaxProgressDiffInMillis(20000f) //20 seconds
+        range_slider.setMinProgressDiffInMillis(2000f) //2 seconds
 
-        leftProgress = range_slider.leftProgressInSec
-        rightProgress = range_slider.rightProgressInSec
+        leftProgress = range_slider.leftProgressInMillis
+        rightProgress = range_slider.rightProgressInMillis
         tvMessage.setText("$leftProgress-$rightProgress")
 
         exoPlayerHelper.seekTo(leftProgress.roundToLong())
 
-//        range_slider.setMaxProgressDiff(0.5f)
-//        range_slider.setMinProgressDiff(0.2f)
-
 //        range_slider.setRoundFrames(true)
         range_slider.setDelegate(object : VideoTimelineView.VideoTimelineViewDelegate {
             override fun onLeftProgressChanged(progress: Float) {
-                leftProgress = range_slider.leftProgressInSec
-                rightProgress = range_slider.rightProgressInSec
+                leftProgress = range_slider.leftProgressInMillis
+                rightProgress = range_slider.rightProgressInMillis
                 tvMessage.setText("$leftProgress-$rightProgress")
 
                 exoPlayerHelper.seekTo(leftProgress.roundToLong())
             }
 
             override fun onRightProgressChanged(progress: Float) {
-                leftProgress = range_slider.leftProgressInSec
-                rightProgress = range_slider.rightProgressInSec
+                leftProgress = range_slider.leftProgressInMillis
+                rightProgress = range_slider.rightProgressInMillis
                 tvMessage.setText("$leftProgress-$rightProgress")
 
                 exoPlayerHelper.seekTo(leftProgress.roundToLong())

@@ -4,10 +4,11 @@ import android.arch.lifecycle.Lifecycle
 import android.arch.lifecycle.LifecycleObserver
 import android.arch.lifecycle.OnLifecycleEvent
 import android.content.Context
-import android.media.AudioManager
+import android.graphics.Color
 import android.net.Uri
 import android.os.Handler
 import android.support.v7.app.AppCompatActivity
+import android.view.Surface
 import android.view.View
 import com.google.android.exoplayer2.*
 import com.google.android.exoplayer2.source.ClippingMediaSource
@@ -21,73 +22,80 @@ import com.google.android.exoplayer2.trackselection.DefaultTrackSelector
 import com.google.android.exoplayer2.ui.PlayerView
 import com.google.android.exoplayer2.upstream.*
 import com.google.android.exoplayer2.upstream.cache.*
+import com.google.android.exoplayer2.upstream.cache.CacheDataSourceFactory
 import com.google.android.exoplayer2.util.Log
 import com.google.android.exoplayer2.util.Util
+import com.google.android.exoplayer2.video.VideoListener
 import java.io.File
 
+class ExoPlayerHelper(val mContext: Context, private val playerView: PlayerView, enableCache: Boolean = true, val loopVideo: Boolean = false, val loopCount: Int = Integer.MAX_VALUE) : LifecycleObserver {
 
-class ExoPlayerHelper(val mContext: AppCompatActivity, private val playerView: PlayerView, enableCache: Boolean = true, val loopVideo: Boolean = false, val loopCount: Int = Integer.MAX_VALUE) : LifecycleObserver {
-
-    private var mDataSourceFactory: DataSource.Factory
     private var mPlayer: SimpleExoPlayer
     var cacheSizeInMb: Long = 500
 
+    var progressRequired: Boolean = false
+
     companion object {
         private var simpleCache: SimpleCache? = null
+        var mLoadControl: DefaultLoadControl? = null
+        var mDataSourceFactory: DataSource.Factory? = null
+        var mCacheEnabled = false
     }
 
     init {
-        //For lifecycle
-        mContext.lifecycle.addObserver(this)
+        if (mCacheEnabled != enableCache || mDataSourceFactory == null) {
 
-        val bandwidthMeter = DefaultBandwidthMeter()
-        mDataSourceFactory = DefaultDataSourceFactory(mContext, Util.getUserAgent(mContext, mContext.getString(R.string.app_name)), bandwidthMeter)
+            mDataSourceFactory = null
 
-        // LoadControl that controls when the MediaSource buffers more media, and how much media is buffered.
-        // LoadControl is injected when the player is created.
-        val builder = DefaultLoadControl.Builder();
-        builder.setAllocator(DefaultAllocator(true, 2 * 1024 * 1024));
-        builder.setBufferDurationsMs(5000, 5000, 5000, 5000);
-        builder.setPrioritizeTimeOverSizeThresholds(true);
-        val mLoadControl = builder.createDefaultLoadControl();
+            val bandwidthMeter = DefaultBandwidthMeter()
+            mDataSourceFactory = DefaultDataSourceFactory(mContext, Util.getUserAgent(mContext, mContext.getString(R.string.app_name)), bandwidthMeter)
 
-        if (enableCache) {
-            val evictor = LeastRecentlyUsedCacheEvictor(cacheSizeInMb * 1024 * 1024)
-            val file = File(mContext.getCacheDir(), "media")
+            // LoadControl that controls when the MediaSource buffers more media, and how much media is buffered.
+            // LoadControl is injected when the player is created.
+            val builder = DefaultLoadControl.Builder()
+            builder.setAllocator(DefaultAllocator(true, 2 * 1024 * 1024))
+            builder.setBufferDurationsMs(5000, 5000, 5000, 5000)
+            builder.setPrioritizeTimeOverSizeThresholds(true)
+            mLoadControl = builder.createDefaultLoadControl()
 
-            if (simpleCache == null) {
-                simpleCache = SimpleCache(file, evictor)
+            if (enableCache) {
+                val evictor = LeastRecentlyUsedCacheEvictor(cacheSizeInMb * 1024 * 1024)
+                val file = File(mContext.getCacheDir(), "media")
+
+                if (simpleCache == null)
+                    simpleCache = SimpleCache(file, evictor)
+
+                mDataSourceFactory = CacheDataSourceFactory(
+                        simpleCache,
+                        mDataSourceFactory,
+                        FileDataSourceFactory(),
+                        CacheDataSinkFactory(simpleCache, (2 * 1024 * 1024).toLong()),
+                        CacheDataSource.FLAG_BLOCK_ON_CACHE or CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR,
+                        object : CacheDataSource.EventListener {
+                            override fun onCacheIgnored(reason: Int) {
+                                Log.d("ZAQ", "onCacheIgnored")
+                            }
+
+                            override fun onCachedBytesRead(cacheSizeBytes: Long, cachedBytesRead: Long) {
+                                Log.d("ZAQ", "onCachedBytesRead , cacheSizeBytes: $cacheSizeBytes   cachedBytesRead: $cachedBytesRead")
+                            }
+                        })
             }
-
-            mDataSourceFactory = CacheDataSourceFactory(
-                    simpleCache,
-                    mDataSourceFactory,
-                    FileDataSourceFactory(),
-                    CacheDataSinkFactory(simpleCache, (2 * 1024 * 1024).toLong()),
-                    CacheDataSource.FLAG_BLOCK_ON_CACHE or CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR,
-                    object : CacheDataSource.EventListener {
-                        override fun onCacheIgnored(reason: Int) {
-                            Log.d("ZAQ", "onCacheIgnored")
-                        }
-
-                        override fun onCachedBytesRead(cacheSizeBytes: Long, cachedBytesRead: Long) {
-                            Log.d("ZAQ", "onCachedBytesRead , cacheSizeBytes: $cacheSizeBytes   cachedBytesRead: $cachedBytesRead")
-                        }
-                    })
         }
+        mCacheEnabled = enableCache
 
         mPlayer = ExoPlayerFactory.newSimpleInstance(
                 mContext,
                 DefaultRenderersFactory(mContext),
                 DefaultTrackSelector(),
-                mLoadControl);
-
+                mLoadControl)
+        playerView.setShutterBackgroundColor(Color.TRANSPARENT)
         playerView.player = mPlayer
+
     }
 
     private var mediaSource: MediaSource? = null
     private var isPreparing = false //This flag is used only for callback
-
 
     /**
      * Sets the url to play
@@ -95,14 +103,21 @@ class ExoPlayerHelper(val mContext: AppCompatActivity, private val playerView: P
      * @param url url to play
      * @param autoPlay whether url will play as soon it Loaded/Prepared
      */
+    var url: String = ""
+
     fun setUrl(url: String, autoPlay: Boolean = false) {
+        this.url = url
+
         mediaSource = buildMediaSource(Uri.parse(url))
-        loopIfNeccessary()
+        loopIfNecessary()
         mPlayer.playWhenReady = autoPlay
         isPreparing = true
         mPlayer.prepare(mediaSource)
     }
 
+    fun makeLifeCycleAware(activity: AppCompatActivity) {
+        activity.lifecycle.addObserver(this)
+    }
 
     /**
      * Trim or clip media to given start and end milliseconds,
@@ -115,7 +130,7 @@ class ExoPlayerHelper(val mContext: AppCompatActivity, private val playerView: P
     fun clip(start: Long, end: Long) {
         if (mediaSource != null) {
             mediaSource = ClippingMediaSource(mediaSource, start * 1000, end * 1000)
-            loopIfNeccessary()
+            loopIfNecessary()
         }
         mPlayer.prepare(mediaSource)
     }
@@ -133,7 +148,10 @@ class ExoPlayerHelper(val mContext: AppCompatActivity, private val playerView: P
         }
     }
 
-    private fun loopIfNeccessary() {
+    /**
+     * Looping if user set if looping necessary
+     */
+    private fun loopIfNecessary() {
         if (loopVideo) {
             mediaSource = LoopingMediaSource(mediaSource, loopCount)
         }
@@ -176,14 +194,18 @@ class ExoPlayerHelper(val mContext: AppCompatActivity, private val playerView: P
     val durationHandler = Handler()
     private var durationRunnable: Runnable? = null
 
-    fun startTimer() {
-        if (durationRunnable != null)
-            durationHandler.postDelayed(durationRunnable, 17)
+    private fun startTimer() {
+        if (progressRequired) {
+            if (durationRunnable != null)
+                durationHandler.postDelayed(durationRunnable, 17)
+        }
     }
 
-    fun stopTimer() {
-        if (durationRunnable != null)
-            durationHandler.removeCallbacks(durationRunnable)
+    private fun stopTimer() {
+        if (progressRequired) {
+            if (durationRunnable != null)
+                durationHandler.removeCallbacks(durationRunnable)
+        }
     }
 
     /**
@@ -199,7 +221,7 @@ class ExoPlayerHelper(val mContext: AppCompatActivity, private val playerView: P
     fun setQualityUrl(qualityUrl: String) {
         val currentPosition = mPlayer.currentPosition
         mediaSource = buildMediaSource(Uri.parse(qualityUrl))
-        loopIfNeccessary()
+        loopIfNecessary()
         mPlayer.prepare(mediaSource)
         mPlayer.seekTo(currentPosition)
     }
@@ -208,22 +230,34 @@ class ExoPlayerHelper(val mContext: AppCompatActivity, private val playerView: P
      * Normal speed is 1f and double the speed would be 2f.
      */
     fun setSpeed(speed: Float) {
-        val param = PlaybackParameters(speed);
+        val param = PlaybackParameters(speed)
         mPlayer.setPlaybackParameters(param)
     }
 
+    /**
+     * Returns whether player is playing
+     */
     fun isPlaying(): Boolean {
         return mPlayer.playWhenReady
     }
 
+    /**
+     * Toggle mute and unmute
+     */
     fun toggleMuteUnMute() {
         if (mPlayer.volume == 0f) unMute() else mute()
     }
 
+    /**
+     * Mute player
+     */
     fun mute() {
         mPlayer.volume = 0f
     }
 
+    /**
+     * Unmute player
+     */
     fun unMute() {
         mPlayer.volume = 1f
     }
@@ -231,29 +265,24 @@ class ExoPlayerHelper(val mContext: AppCompatActivity, private val playerView: P
 
     //Life Cycle
     @OnLifecycleEvent(Lifecycle.Event.ON_PAUSE)
-    private fun onPause() {
+    protected fun onPause() {
         mPlayer.playWhenReady = false
     }
 
     @OnLifecycleEvent(Lifecycle.Event.ON_DESTROY)
-    private fun onDestroy() {
+    protected fun onDestroy() {
         simpleCache?.release()
         simpleCache = null
         mPlayer.playWhenReady = false
     }
 
-    /**
-     * Beta integration
-     */
-    fun releaseMediaSource() {
-        pause()
-    }
     //LISTENERS
 
     /**
      * Listener that used for most popular callbacks
      */
     fun setListener(progressRequired: Boolean = false, listener: Listener) {
+        this.progressRequired = progressRequired
         mPlayer.addListener(object : Player.EventListener {
 
             override fun onPlayerError(error: ExoPlaybackException?) {
@@ -262,23 +291,53 @@ class ExoPlayerHelper(val mContext: AppCompatActivity, private val playerView: P
 
             override fun onPlayerStateChanged(playWhenReady: Boolean, playbackState: Int) {
 
+                Log.i("EXO", "onPlayerStateChanged $playWhenReady with ${url}")
                 if (isPreparing && playbackState == Player.STATE_READY) {
                     isPreparing = false
                     listener.onPlayerReady()
                 }
-                if (playbackState == Player.STATE_BUFFERING) {
+                when (playbackState) {
+                    Player.STATE_BUFFERING -> {
+                        listener.onBuffering(true)
+                    }
+                    Player.STATE_READY -> {
+                        listener.onBuffering(false)
+                        if (playWhenReady) {
+                            startTimer()
+                            listener.onStart()
+                        } else {
+                            stopTimer()
+                            listener.onStop()
+                        }
+                    }
+                    Player.STATE_IDLE -> {
+                        stopTimer()
+                        listener.onBuffering(false)
+                        listener.onError(null)
+                    }
+                    Player.STATE_ENDED -> {
+                        listener.onBuffering(false)
+                        stopTimer()
+                        listener.onStop()
+                    }
+                }
+                /*if (playbackState == Player.STATE_BUFFERING) {
                     listener.onBuffering(true)
+                } else if (playbackState == Player.STATE_IDLE) {
+                    listener.onError(null)
                 } else {
                     listener.onBuffering(false)
                 }
 
-                if (playWhenReady) {
-                    startTimer()
-                    listener.onStart()
-                } else {
-                    stopTimer()
-                    listener.onStop()
-                }
+                if (playbackState == Player.STATE_IDLE) {
+                    if (playWhenReady) {
+                        startTimer()
+                        listener.onStart()
+                    } else {
+                        stopTimer()
+                        listener.onStop()
+                    }
+                }*/
             }
         })
 
@@ -286,10 +345,12 @@ class ExoPlayerHelper(val mContext: AppCompatActivity, private val playerView: P
             listener.onToggleControllerVisible(visibility == View.VISIBLE)
         }
 
-        durationRunnable = Runnable {
-            listener.onProgress(mPlayer.currentPosition)
-            if (mPlayer.playWhenReady) {
-                durationHandler.postDelayed(durationRunnable, 500)
+        if (progressRequired) {
+            durationRunnable = Runnable {
+                listener.onProgress(mPlayer.currentPosition)
+                if (mPlayer.playWhenReady) {
+                    durationHandler.postDelayed(durationRunnable, 500)
+                }
             }
         }
     }
@@ -303,5 +364,4 @@ class ExoPlayerHelper(val mContext: AppCompatActivity, private val playerView: P
         fun onBuffering(isBuffering: Boolean) {}
         fun onToggleControllerVisible(isVisible: Boolean) {}
     }
-
 }
